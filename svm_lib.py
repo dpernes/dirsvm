@@ -489,41 +489,56 @@ class SymTriSvm(AsyTriSvm):
         self.is_optim['zeta'] = False
 
 
-def linear_kernel(x, y, *args, **kwargs):
-    return np.dot(x, y.T)
+def linear_kernel(x, z, *args, **kwargs):
+    return np.dot(x, z.T)
 
 
-def cosine_kernel(is_directional, x, y, *args, **kwargs):
-    ret = np.zeros((x.shape[0], y.shape[0]))
+def cosine_kernel(is_directional, x, z, *args, **kwargs):
+    ret = np.zeros((x.shape[0], z.shape[0]))
 
     for i in xrange(x.shape[0]):
-        next_ = x[i] * y
+        next_ = x[i] * z
         next_[:, is_directional] = np.cos(
-                                     2.0*np.pi*(x[i] - y))[:, is_directional]
+                                     2.0*np.pi*(x[i] - z))[:, is_directional]
         ret[i, :] = np.sum(next_, axis=1)
 
     return ret
 
 
-def triangular_kernel(is_directional, x, y, *args, **kwargs):
+def triangular_kernel(is_directional, x, z, *args, **kwargs):
     def tri_wave(t):
         return signal.sawtooth(2.0 * np.pi * (t - 0.5), width=0.5)
 
-    ret = np.zeros((x.shape[0], y.shape[0]))
+    ret = np.zeros((x.shape[0], z.shape[0]))
 
     for i in xrange(x.shape[0]):
-        next_ = x[i] * y
-        next_[:, is_directional] = tri_wave(x[i] - y)[:, is_directional]
+        next_ = x[i] * z
+        next_[:, is_directional] = tri_wave(x[i] - z)[:, is_directional]
+        ret[i, :] = np.sum(next_, axis=1)
+
+    return ret
+
+
+def drbf_kernel(is_directional, x, z, conc, *args, **kwargs):
+    ret = np.zeros((x.shape[0], z.shape[0]))
+
+    for i in xrange(x.shape[0]):
+        next_ = x[i] * z
+        next_[:, is_directional] = np.exp(conc * np.cos(
+                                     2.0*np.pi*(x[i] - z)))[:, is_directional]
         ret[i, :] = np.sum(next_, axis=1)
 
     return ret
 
 
 class DirectionalKernelSVM(BaseEstimator, ClassifierMixin):
-    def __init__(self, is_directional, C=1., kernel='cosine', max_iter=-1):
+    def __init__(self, is_directional, C=1., kernel='cosine', kernel_param=1.,
+                 max_iter=-1):
+
         self.is_directional = is_directional
         self.C = C
         self.kernel = kernel
+        self.kernel_param = kernel_param
         self.max_iter = max_iter
 
     def fit(self, X, y):
@@ -531,13 +546,15 @@ class DirectionalKernelSVM(BaseEstimator, ClassifierMixin):
         if self.kernel == 'linear':
                 kernel = 'linear'
         elif self.kernel == 'cosine':
-                # kernel = lambda x, y: cosine_kernel(self.is_directional, x, y)
-                def kernel(x, y):
-                    return cosine_kernel(self.is_directional, x, y)
+                def kernel(x, z):
+                    return cosine_kernel(self.is_directional, x, z)
         elif self.kernel == 'triangular':
-                # kernel = lambda x, y: triangular_kernel(self.is_directional, x, y)
-                def kernel(x, y):
-                    return triangular_kernel(self.is_directional, x, y)
+                def kernel(x, z):
+                    return triangular_kernel(self.is_directional, x, z)
+        elif self.kernel == 'drbf':
+                def kernel(x, z):
+                    return drbf_kernel(self.is_directional, x, z,
+                                       self.kernel_param)
 
         self.svc_ = svm.SVC(C=self.C, kernel=kernel, max_iter=self.max_iter,
                             random_state=42)
