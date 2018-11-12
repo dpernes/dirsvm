@@ -1,13 +1,14 @@
+import warnings
+from copy import deepcopy
+
+import dill
 import numpy as np
 from scipy import signal
+from sklearn import svm
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.model_selection import GridSearchCV
-from sklearn.preprocessing import MinMaxScaler
 from sklearn.pipeline import make_pipeline
-from sklearn import svm
-import warnings
-import dill
-from copy import deepcopy
+from sklearn.preprocessing import MinMaxScaler
 
 
 class Svm(BaseEstimator, ClassifierMixin):
@@ -155,11 +156,10 @@ class Svm(BaseEstimator, ClassifierMixin):
                     (self.model_params[param],
                      self.model_params_1st_moment[param],
                      self.model_params_2nd_moment[param]) = (
-                            self.adam(
-                                self.model_params[param],
-                                grads[param],
-                                self.model_params_1st_moment[param],
-                                self.model_params_2nd_moment[param]))
+                         self.adam(
+                             self.model_params[param], grads[param],
+                             self.model_params_1st_moment[param],
+                             self.model_params_2nd_moment[param]))
 
         self.model_params = \
             self.model_function_post_train_step(self.model_params)
@@ -309,8 +309,7 @@ class AsyTriSvm(Svm):
         return f, cache
 
     def asy_triangle_backward(self, dout, cache):
-        x_dir, x_lin, w0, wd, theta, zeta, wl = cache
-        N, _ = x_dir.shape
+        x_dir, x_lin, _, wd, theta, zeta, _ = cache
 
         # the function is minimum at x=a (a<0)
         a = -2*np.pi * zeta
@@ -330,8 +329,8 @@ class AsyTriSvm(Svm):
             grads['w0'] = 1.0*np.sum(dout, axis=0)
         if self.is_optim['wd']:
             grads['wd'] = np.matmul(
-                            (-signal.sawtooth(arg_tri, width=1-zeta)).T,
-                            dout)
+                -signal.sawtooth(arg_tri, width=1-zeta).T, dout)
+
         if self.is_optim['theta']:
             grads['theta'] = np.matmul((slope_dsc * (arg_tri > 0)
                                         + slope_asc * (arg_tri <= 0) * wd).T,
@@ -422,7 +421,7 @@ class AsyTriSvm(Svm):
         return ret
 
 
-class AsyTriSvm_2step(AsyTriSvm):
+class AsyTriSvm2step(AsyTriSvm):
     def __init__(self, is_directional, weight_scale=1e-3, C=1, lr=1e-1,
                  optimizer='SGD', lr_decay=0.99, momentum=0.9,
                  rho1=0.9, rho2=0.999, num_epochs1=1, num_epochs2=1):
@@ -430,7 +429,7 @@ class AsyTriSvm_2step(AsyTriSvm):
         self.num_epochs1 = num_epochs1
         self.num_epochs2 = num_epochs2
 
-        super(AsyTriSvm_2step, self).__init__(is_directional,
+        super(AsyTriSvm2step, self).__init__(is_directional,
                                               weight_scale=weight_scale, C=C,
                                               lr=lr, optimizer=optimizer,
                                               lr_decay=lr_decay,
@@ -447,7 +446,7 @@ class AsyTriSvm_2step(AsyTriSvm):
         self.is_optim['zeta'] = False
         self.is_optim['wl'] = True
         self.num_epochs = self.num_epochs1
-        ret1 = (super(AsyTriSvm_2step, self)
+        ret1 = (super(AsyTriSvm2step, self)
                 .fit(x, y_enc,
                      batch_size=batch_size,
                      init_params=True,
@@ -462,7 +461,7 @@ class AsyTriSvm_2step(AsyTriSvm):
         self.is_optim['zeta'] = True
         self.is_optim['wl'] = True
         self.num_epochs = self.num_epochs2
-        ret2 = (super(AsyTriSvm_2step, self)
+        ret2 = (super(AsyTriSvm2step, self)
                 .fit(x, y_enc,
                      batch_size=batch_size,
                      init_params=False,
@@ -499,7 +498,7 @@ def cosine_kernel(is_directional, x, z, *args, **kwargs):
     for i in xrange(x.shape[0]):
         next_ = x[i] * z
         next_[:, is_directional] = np.cos(
-                                     2.0*np.pi*(x[i] - z))[:, is_directional]
+            2.0*np.pi*(x[i] - z))[:, is_directional]
         ret[i, :] = np.sum(next_, axis=1)
 
     return ret
@@ -525,7 +524,7 @@ def drbf_kernel(is_directional, x, z, conc, *args, **kwargs):
     for i in xrange(x.shape[0]):
         next_ = x[i] * z
         next_[:, is_directional] = np.exp(conc * np.cos(
-                                     2.0*np.pi*(x[i] - z)))[:, is_directional]
+            2.0*np.pi*(x[i] - z)))[:, is_directional]
         ret[i, :] = np.sum(next_, axis=1)
 
     return ret
@@ -544,17 +543,17 @@ class DirectionalKernelSVM(BaseEstimator, ClassifierMixin):
     def fit(self, X, y):
         self.is_directional = np.array(self.is_directional).astype(np.bool)
         if self.kernel == 'linear':
-                kernel = 'linear'
+            kernel = 'linear'
         elif self.kernel == 'cosine':
-                def kernel(x, z):
-                    return cosine_kernel(self.is_directional, x, z)
+            def kernel(x, z):
+                return cosine_kernel(self.is_directional, x, z)
         elif self.kernel == 'triangular':
-                def kernel(x, z):
-                    return triangular_kernel(self.is_directional, x, z)
+            def kernel(x, z):
+                return triangular_kernel(self.is_directional, x, z)
         elif self.kernel == 'drbf':
-                def kernel(x, z):
-                    return drbf_kernel(self.is_directional, x, z,
-                                       self.kernel_param)
+            def kernel(x, z):
+                return drbf_kernel(self.is_directional, x, z,
+                                   self.kernel_param)
 
         self.svc_ = svm.SVC(C=self.C, kernel=kernel, max_iter=self.max_iter,
                             random_state=42)
@@ -564,13 +563,13 @@ class DirectionalKernelSVM(BaseEstimator, ClassifierMixin):
 
     def predict(self, X):
         if self.svc_ is None:
-                return np.zeros(X.shape[0])
+            return np.zeros(X.shape[0])
 
         return self.svc_.predict(X)
 
     def decision_function(self, X):
         if self.svc_ is None:
-                return np.zeros(X.shape[0])
+            return np.zeros(X.shape[0])
         return self.svc_.decision_function(X)
 
 
@@ -700,11 +699,11 @@ class AsyTriKernelSVM(Svm):
 
         # second stage: finetune the parameters for the asymmetric version
         ret = super(AsyTriKernelSVM, self).fit(
-                  x, y_enc,
-                  batch_size=batch_size,
-                  init_optim=True,
-                  verbose=verbose,
-                  print_every_nit=print_every_nit)
+            x, y_enc,
+            batch_size=batch_size,
+            init_optim=True,
+            verbose=verbose,
+            print_every_nit=print_every_nit)
 
         return ret
 
