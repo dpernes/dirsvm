@@ -1,5 +1,4 @@
 scipy==1.0.0
-matplotlib==2.0.2
 numpy==1.12.1
 dill==0.2.8.2
 scikit_learn==0.20.0
