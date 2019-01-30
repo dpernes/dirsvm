@@ -5,10 +5,18 @@ import numpy as np
 from sklearn import metrics
 from sklearn.model_selection import GridSearchCV
 from sklearn.multiclass import OneVsOneClassifier
-from utils import read_dataset, read_types
 
-from svm_lib import (AsyTriKernelSVM, AsyTriSvm2step, DirectionalKernelSVM,
-                     SymTriSvm)
+from keras.wrappers.scikit_learn import KerasClassifier
+from keras.callbacks import EarlyStopping
+
+from models.directional_lr import DirLogisticRegression
+from models.generative import naive_bayes
+from models.svm import (AsyTriKernelSVM, AsyTriSvm2step, DirectionalKernelSVM,
+                        SymTriSvm)
+from models.mlp import build_mlp_classifier, DirMLP
+import distributions
+
+from utils import read_dataset, read_types
 
 
 def get_args():
@@ -29,11 +37,21 @@ def get_args():
     return parser.parse_args()
 
 
-def get_models(args, types):
+def get_models(args, types, n_classes):
     is_dir = [x == "directional" for x in types]
-    seed = 1930900096
-    print 'seed', seed
-    np.random.seed(seed=seed)
+
+    # von Mises Naive Bayes
+    vm_types = ["linear" if t in [] else t for t in types]
+    vm_distr = distributions.types_to_distributions(vm_types)
+    vmnb = naive_bayes(distributions=vm_distr)
+
+    # Directional Logistic Regression
+    dlr = OneVsOneClassifier(
+        GridSearchCV(
+            DirLogisticRegression(is_directional=is_dir),
+            param_grid={'C': np.logspace(-3, 3, 5)},
+            cv=3),
+        n_jobs=-1)
 
     # Cosine SVM
     kcos_svm = OneVsOneClassifier(
@@ -96,12 +114,48 @@ def get_models(args, types):
             cv=3)
     )
 
-    ret = [('Cosine SVM', kcos_svm),
+    # MLP
+    rmlp = GridSearchCV(
+        KerasClassifier(build_fn=build_mlp_classifier,
+                        batch_size=128,
+                        verbose=1),
+        param_grid={'input_dim': [len(types)],
+                    'n_classes': [n_classes],
+                    'n_layers': [4, 5],
+                    'dim': [256],
+                    'lr': [1e-4, 1e-3],
+                    'l2': [0., 1e-4],
+                    'dropout': [0., 0.2, 0.5],
+                    'epochs': [200]},
+        cv=3,
+        n_jobs=1)
+
+    # Directional MLP
+    dmlp = GridSearchCV(
+        DirMLP(is_dir,
+               batch_size=128,
+               callbacks=[EarlyStopping(monitor='loss',
+                                        min_delta=1e-4,
+                                        patience=5)]),
+        param_grid={'n_layers': [4, 5],
+                    'dim': [256],
+                    'lr': [1e-4, 1e-3],
+                    'l2': [0., 1e-4],
+                    'dropout': [0., 0.2, 0.5],
+                    'epochs': [200]},
+        cv=3,
+        n_jobs=-1)
+
+    ret = [('dLR', dlr),
+           ('vMNB', vmnb),
+           ('Cosine SVM', kcos_svm),
            ('Directional RBF Kernel SVM', drbf_svm),
            ('Primal Symmetric Triangle SVM', stri_svm),
            ('Symmetric Triangle Kernel SVM', ktri_svm),
            ('Primal Asymmetric Triangle SVM', atri_svm),
-           ('Asymmetric Triangle Kernel SVM', katri_svm)]
+           ('Asymmetric Triangle Kernel SVM', katri_svm),
+           ('rMLP', rmlp),
+           ('dMLP', dmlp)]
 
     return ret
 
@@ -119,7 +173,9 @@ def get_dataset(args, fold):
 args = get_args()
 
 types = read_types(args.dataset, "types.data")
-models = get_models(args, types)
+_, tr_y, _, _ = get_dataset(args, 0)
+n_classes = len(np.unique(tr_y))
+models = get_models(args, types, n_classes)
 
 tr_accuracy_values = {n: [] for n, _ in models}
 ts_accuracy_values = {n: [] for n, _ in models}
@@ -134,7 +190,12 @@ for foldid in range(args.first_partition, args.last_partition):
         os.makedirs(output_path)
 
     for name, model in models:
-        model.fit(tr_X, tr_y)
+        if name == 'MLP':
+            model.fit(tr_X, tr_y, callbacks=[EarlyStopping(monitor='loss',
+                                                           min_delta=1e-4,
+                                                           patience=5)])
+        else:
+            model.fit(tr_X, tr_y)
         tr_preds = model.predict(tr_X)
         ts_preds = model.predict(ts_X)
 

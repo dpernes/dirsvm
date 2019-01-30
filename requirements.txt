@@ -1,4 +1,8 @@
+numpy==1.15.4
 scipy==1.0.0
-numpy==1.12.1
-dill==0.2.8.2
-scikit_learn==0.20.0
+matplotlib==2.0.2
+Keras==2.2.4
+tensorflow_gpu==1.12.0
+dill==0.2.9
+scikit_learn==0.20.2
+tensorflow==1.12.0

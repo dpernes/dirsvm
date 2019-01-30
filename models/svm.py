@@ -430,11 +430,11 @@ class AsyTriSvm2step(AsyTriSvm):
         self.num_epochs2 = num_epochs2
 
         super(AsyTriSvm2step, self).__init__(is_directional,
-                                              weight_scale=weight_scale, C=C,
-                                              lr=lr, optimizer=optimizer,
-                                              lr_decay=lr_decay,
-                                              momentum=momentum, rho1=rho1,
-                                              rho2=rho2)
+                                             weight_scale=weight_scale, C=C,
+                                             lr=lr, optimizer=optimizer,
+                                             lr_decay=lr_decay,
+                                             momentum=momentum, rho1=rho1,
+                                             rho2=rho2)
 
     def fit(self, x, y_enc, batch_size=None, verbose=False,
             print_every_nit=100):

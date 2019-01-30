@@ -1,6 +1,7 @@
 import argparse
 import os
 import warnings
+import pickle
 
 import numpy as np
 from sklearn import metrics as mts
@@ -18,7 +19,7 @@ def get_args():
     parser.add_argument('--dataset', metavar="D", nargs='?',
                         default='', help='Dataset name')
     parser.add_argument('--last-partition', metavar='L', type=int,
-                        default=100, help='Last partition to consider')
+                        default=29, help='Last partition to consider')
 
     return parser.parse_args()
 
@@ -56,19 +57,37 @@ path = args.predictions
 partitions = sorted(list(os.walk(os.path.join('output', 'predictions',
                                               args.dataset)))[0][1])
 
-models = ['Directional RBF Kernel SVM.csv',
+models = ['vMNB.csv',
+          'dLR.csv',
+          'MLP.csv',
+          'dMLP.csv',
+          'Directional RBF Kernel SVM.csv',
           'Cosine SVM.csv',
           'Primal Symmetric Triangle SVM.csv',
           'Symmetric Triangle Kernel SVM.csv',
-          'Primal Asymmetric Triangle SVM.csv',
+          'Primal Asymmetric Triangle SVM 2step all.csv',
           'Asymmetric Triangle Kernel SVM.csv']
 
-metrics = [('accuracy', mts.accuracy_score)]
+# models = ['MLP.csv']
+
+f1_macro = lambda y_true, y_pred: mts.f1_score(y_true, y_pred, average='macro')
+f1_micro = lambda y_true, y_pred: mts.f1_score(y_true, y_pred, average='micro')
+f1_min = lambda y_true, y_pred: np.min(mts.f1_score(y_true, y_pred, average=None))
+f1_per_class = lambda y_true, y_pred: mts.f1_score(y_true, y_pred, average=None)
+accuracy = lambda y_true, y_pred: mts.accuracy_score(y_true, y_pred)
+
+# metrics = [('accuracy', mts.accuracy_score), ('f1_macro', f1_macro),
+#            ('f1_micro', f1_micro), ('f1_min', f1_min)]
+
+metrics = [('f1_macro', f1_macro)]
 
 results = {metric: {m: [] for m in models} for metric, _ in metrics}
 
 all_res = {m: [] for m, _ in metrics}
 
+res2pkl = {mdl: [] for mdl in models}
+
+print([metric_name for metric_name, _ in metrics])
 for model in models:
     for fold in sorted(partitions):
         if int(fold) > args.last_partition:
@@ -83,7 +102,6 @@ for model in models:
             continue
 
         p = get_predictions(args, fold, model)
-
         for metric_name, metric in metrics:
             results[metric_name][model].append(metric(y, p))
 
@@ -92,11 +110,15 @@ for model in models:
                                   (100 * np.std(results[m][model]))
                                   if len(results[m][model]) > 0 else 0.0)
            for m, _ in metrics]
+
+    res2pkl[model] = res[0]
+
     for i, (m, _) in zip(res, metrics):
         all_res[m].append(i)
 
     print '%40s | %s' % (model, ' | '.join(res))
 
+pickle.dump(res2pkl, open(args.dataset+"_"+metrics[0][0]+"_res.pkl", "wb"))
 print
 print
 print
