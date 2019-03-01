@@ -1,5 +1,5 @@
 # dirsvm
-Source code (Python 2.7) for the paper:
+Source code (Python 2.7) for the paper (full-text available [here](https://www.mdpi.com/2076-3417/9/4/725/pdf)) :
 
 Pernes, D.; Fernandes, K.; Cardoso, J.S. Directional Support Vector Machines. *Appl. Sci.* **2019**, 9, 725.
 
